@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "serve_metrics"
+version = "0.1.0"
+description = ""
+authors = ["simon-mo <xmo@berkeley.edu>"]
+
+[tool.poetry.dependencies]
+python = "^3.5"
+numpy = "*"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
