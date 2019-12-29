@@ -40,3 +40,7 @@ def test_projection(metric_conn: MetricConnection):
     result = query.over_past_seconds([0.2]).compute_array()
     assert len(result) == 1
     assert len(result[0].result) == 0
+
+
+def test_ingestion(metric_conn: MetricConnection, benchmark):
+    benchmark(lambda: metric_conn.observe("lat", 1.0))
