@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "serve_metrics"
+name = "event_metrics"
 version = "0.1.0"
 description = ""
 authors = ["simon-mo <xmo@berkeley.edu>"]
@@ -10,6 +10,7 @@ numpy = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
+pytest-benchmark = "^3.2.2"
 
 [build-system]
 requires = ["poetry>=0.12"]
