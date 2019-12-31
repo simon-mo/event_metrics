@@ -11,10 +11,8 @@ from typing import Dict, List, Tuple, Union
 import numpy as np
 
 from event_metrics.exceptions import MetricNotFound
-
-
-def _current_time_us():
-    return int(time.time() * 1e6)
+from event_metrics.query import Query, QueryBatch
+from event_metrics.utils import _current_time_us
 
 
 class MetricConnection:
@@ -88,16 +86,18 @@ CREATE TABLE IF NOT EXISTS cache (
             ingest_time_us = _current_time_us()
 
         labels = json.dumps(labels, sort_keys=True)
-
-        self._conn.executescript(
-            """
-BEGIN TRANSACTION;
-INSERT INTO metrics VALUES (:name, :value, :timestamp, :labels_json);
-INSERT OR REPLACE INTO cache VALUES (:name, :value, :labels_json);
-COMMIT;
-            """,
-            dict(name=name, value=value, timestamp=ingest_time_us, labels_json=labels),
+        data = dict(
+            name=name, value=value, timestamp=ingest_time_us, labels_json=labels
         )
+
+        self._conn.execute("BEGIN TRANSACTION")
+        self._conn.execute(
+            "INSERT INTO metrics VALUES (:name, :value, :timestamp, :labels_json)", data
+        )
+        self._conn.execute(
+            "INSERT OR REPLACE INTO cache VALUES (:name, :value, :labels_json)", data
+        )
+        self._conn.commit()
 
     def increment(
         self,
@@ -128,32 +128,37 @@ COMMIT;
             ingest_time_us = _current_time_us()
 
         labels = json.dumps(labels, sort_keys=True)
-
-        self._conn.executescript(
-            """
-BEGIN TRANSACTION;
--- If the value doesn't exist, populate the cache
-INSERT OR IGNORE INTO cache VALUES (:name, :default_counter, :labels_json); 
-UPDATE cache 
-    SET metric_value = metric_value + :delta 
-    WHERE metric_name = :name and labels_json = :labels_json;
-
--- Now the cache is populated, we insert the new value into time series table
-INSERT INTO metrics VALUES (
-    :name, 
-    (SELECT metric_value FROM cache WHERE metric_name = :name),
-    :timestamp,
-    :labels_json);
-COMMIT;
-            """,
-            dict(
-                name=name,
-                delta=delta,
-                timestamp=ingest_time_us,
-                labels_json=labels,
-                default_counter=0,
-            ),
+        data = dict(
+            name=name,
+            delta=delta,
+            timestamp=ingest_time_us,
+            labels_json=labels,
+            default_counter=0,
         )
+
+        self._conn.execute("BEGIN TRANSACTION")
+        # If the value doesn't exist, populate the cache
+        self._conn.execute(
+            "INSERT OR IGNORE INTO cache VALUES (:name, :default_counter, :labels_json)",
+            data,
+        )
+        self._conn.execute(
+            "UPDATE cache SET metric_value = metric_value + :delta "
+            "WHERE metric_name = :name and labels_json = :labels_json",
+            data,
+        )
+        # Now the cache is populated, we insert the new value into time series table
+        self._conn.execute(
+            """
+INSERT INTO metrics VALUES (
+:name, 
+(SELECT metric_value FROM cache WHERE metric_name = :name),
+:timestamp,
+:labels_json);
+    """,
+            data,
+        )
+        self._conn.commit()
 
     def query(self, name, *, labels: Union[str, Dict[str, str], None] = "*"):
         """Start a query. To continue, calls from_* and to_* method to compute the final value.
@@ -174,12 +179,15 @@ COMMIT;
         cursor = self._conn.execute(
             "SELECT labels_json FROM cache WHERE metric_name = ?", (name,)
         )
-        all_labels = itertools.chain.from_iterable(cursor.fetchall())
-
+        all_labels = set(itertools.chain.from_iterable(cursor.fetchall()))
         if len(all_labels) == 0:
             raise MetricNotFound("Metric {} is not recorded in database.".format(name))
 
         if isinstance(labels, str) and labels == "*":
+            # If there is only one items, squeeze the batch into single query
+            if len(all_labels) == 1:
+                return Query(self._conn, name, labels=all_labels.pop())
+
             return QueryBatch(
                 [Query(self._conn, name, labels=labels) for labels in all_labels]
             )
@@ -237,138 +245,3 @@ COMMIT;
 
         else:
             raise ValueError("labels input can only be '*', dict or None")
-
-
-class Query:
-    def __init__(self, conn, metric_name, labels: Union[Dict[str, str], None] = None):
-        self._conn = conn
-        self._construction_time = _current_time_us()
-        self._metric_name = metric_name
-        self._time_cutoff_us = 0
-
-        self.labels = labels
-        if self.labels is not None:
-            self.labels = json.dumps(self._labels, sort_keys=True)
-
-    def _fetch_array(self, projection_clause):
-        stmt = (
-            """
-SELECT {projection} FROM metrics 
-WHERE metric_name = '{name}' AND ingest_time_us > :cutoff AND labels_json = :labels 
-        """,
-            dict(
-                projection=projection_clause,
-                name=self._metric_name,
-                cutoff=self._time_cutoff_us,
-                labels=self._labels,
-            ),
-        )
-        result_cursor = self._conn.execute(stmt)
-        result_list = result_cursor.fetchall()
-        return result_list
-
-    def from_beginning(self):
-        # start from the epoch, this is a noop because the default curoff is 0
-        self._time_cutoff_us = 0
-        return self
-
-    def from_timestamp(self, timestamp: Union[datetime.datetime, float]):
-        assert isinstance(
-            timestamp, (datetime.datetime, float)
-        ), "Please use datetime.datetime object or floating point to indicate timestamp"
-
-        if isinstance(timestamp, datetime.datetime):
-            self._time_cutoff_us = int(timestamp.timestamp() * 1e6)
-
-        if isinstance(timestamp, float):
-            self._time_cutoff_us = int(timestamp * 1e6)
-
-        return self
-
-    def from_timedelta(self, delta: datetime.timedelta):
-        assert isinstance(delta, datetime.timedelta)
-        self._time_cutoff_us = self._construction_time - (delta.total_seconds() * 1e6)
-        return self
-
-    def to_scaler(self, agg="last") -> Union[None, float]:
-        agg = agg.lower()
-        assert agg in {"last", "min", "max", "mean", "count", "sum"}
-
-        if agg == "last":  # Fetch from cache for the latest value
-            result = self._conn.execute(
-                "SELECT metric_value FROM cache WHERE metric_name = ?",
-                (self._metric_name,),
-            ).fetchone()
-            return result[0] if result is not None else None
-        else:
-            result = self._fetch_array("{agg}(metric_value)".format(agg=agg))
-            return result[0][0] if len(result) != 0 else None
-
-    def to_buckets(self, buckets=[0, 0.5, 1.0, 5.0, 10, 100, np.inf], cumulative=False):
-        result = self._fetch_array("metric_value")
-        if len(result) == 0:
-            return np.array([])
-
-        counts, buckets = np.histogram(result, bins=buckets)
-        if cumulative:
-            counts = np.cumsum(counts)
-        return counts
-
-    def to_percentiles(self, percentiles=[50, 90, 95, 99]):
-        result = self._fetch_array("metric_value")
-        if len(result) == 0:
-            return np.array([])
-        return np.percentile(result, percentiles)
-
-    def to_array(self) -> np.ndarray:
-        result = self._fetch_array("metric_value")
-        return np.array(result).reshape(-1) if len(result) != 0 else np.array([])
-
-    def to_timestamps_array(self) -> Tuple[np.ndarray, np.ndarray]:
-        result = self._fetch_array("metric_value, ingest_time_us")
-        if len(result) == 0:
-            return np.array([]), np.array([])
-        data, ts = np.array(result).T
-        # Casting is necessary because the value can be "string" due to data can be "None"
-        return ts.astype(float) / 1e6, data
-
-    def to_timestamps(self) -> np.ndarray:
-        result = self._fetch_array("ingest_time_us")
-        return (
-            np.array(result).reshape(-1).astype(float) / 1e6
-            if len(result) != 0
-            else np.array([])
-        )
-
-
-class QueryBatch:
-    def __init__(self, queries: List[Query]):
-        self.queries = queries
-
-    def _make_query_result_batch(self, make_result_lambda):
-        return [
-            {"labels": query.labels, "result": make_result_lambda(query)}
-            for query in self.query_labels
-        ]
-
-    def to_scaler(self, agg="last"):
-        return self._make_query_result_batch(lambda query: query.to_scaler(agg))
-
-    def to_buckets(self, buckets=[0, 0.5, 1.0, 5.0, 10, 100, np.inf], cumulative=False):
-        return self._make_query_result_batch(
-            lambda query: query.to_buckets(buckets, cumulative)
-        )
-
-    def to_percentiles(self, percentiles=[50, 90, 95, 99]):
-        return self._make_query_result_batch(
-            lambda query: query.to_percentiles(percentiles)
-        )
-
-    def to_array(self):
-        return self._make_query_result_batch(lambda query: query.to_array())
-
-    def to_timestamps_array(self):
-        return self._make_query_result_batch(lambda query: query.to_timestamps_array())
-
-    def to_timestamps(self):
-        return self._make_query_result_batch(lambda query: queyr.to_timestamps())

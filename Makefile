@@ -1,0 +1,3 @@
+format:
+	isort -y 
+	black .
