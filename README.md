@@ -33,7 +33,7 @@ The following features are work in progress
 ### Usage
 
 ```python
-from event_metrics import MetricConnection, Units
+from event_metrics import MetricConnection
 
 conn = MetricConnection("/tmp/event_metrics_demo")
 
@@ -41,7 +41,7 @@ conn.observe("latency", 1.2)
 conn.increment("counter", -1)
 
 # labeling
-conn.observe("latency", 2.0, labels={"service": "myapp"})
+conn.observe("latency", 2.0, labels={"service": "myapp", "other": "label"})
 
 # querying
 (conn.query("latency", labels={"service":"myapp"})
