@@ -19,7 +19,9 @@ def test_observe_null(metric_conn: MetricConnection):
     metric_conn.observe("obs", ingest_time_us=1e6)
     metric_conn.observe("obs", ingest_time_us=2e6)
     assert len(metric_conn.query("obs").to_timestamps()) == 2
-    assert set(metric_conn.query("obs").to_timestamps().tolist()) == set([1, 2])
+    ts = metric_conn.query("obs").to_timestamps().tolist()
+    assert isinstance(ts[0], datetime)
+    assert set(ts) == set([datetime.fromtimestamp(1), datetime.fromtimestamp(2)])
 
 
 def test_return_scalers(metric_conn: MetricConnection):
@@ -68,7 +70,9 @@ def test_return_timestamps_array(metric_conn: MetricConnection):
     # For SQL system, the ordering is not guaranteed
     assert set(data.tolist()) == set([1.0, 2.0])
     # Timestamps should be returned in seconds
-    assert set(timestamps.tolist()) == set([100 / 1e6, 200 / 1e6])
+    assert set(timestamps.tolist()) == set(
+        [datetime.fromtimestamp(100 / 1e6), datetime.fromtimestamp(200 / 1e6)]
+    )
 
 
 def test_projection(metric_conn: MetricConnection):

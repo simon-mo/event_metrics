@@ -104,15 +104,25 @@ AND labels_json = :labels
             return np.array([]), np.array([])
         data, ts = np.array(result).T
         # Casting is necessary because the value can be "string" due to data can be "None"
-        return ts.astype(float) / 1e6, data
+        datetime_64 = np.array(
+            [
+                datetime.datetime.fromtimestamp(timestamp_us / 1e6)
+                for timestamp_us in ts
+            ],
+            dtype="datetime64",
+        )
+        return datetime_64, data
 
     def to_timestamps(self) -> np.ndarray:
         result = self._fetch_array("ingest_time_us")
-        return (
-            np.array(result).reshape(-1).astype(float) / 1e6
-            if len(result) != 0
-            else np.array([])
+        datetime_64 = np.array(
+            [
+                datetime.datetime.fromtimestamp(timestamp_us / 1e6)
+                for timestamp_us in np.array(result).reshape(-1)
+            ],
+            dtype="datetime64",
         )
+        return datetime_64 if len(datetime_64) != 0 else np.array([])
 
 
 class QueryBatch:
