@@ -2,8 +2,10 @@ import time
 from datetime import datetime, timedelta
 
 import numpy as np
+import pytest
 
 from event_metrics import MetricConnection
+from event_metrics.exceptions import MetricNotFound
 
 
 def test_increment(metric_conn: MetricConnection):
@@ -97,6 +99,49 @@ def test_projection(metric_conn: MetricConnection):
 
     assert len(query.from_timestamp(datetime.now()).to_array()) == 0
     assert len(query.from_timestamp(time.time()).to_array()) == 0
+
+
+def test_label_mechanism(metric_conn: MetricConnection):
+    metric_conn.observe("latency", 2.0, labels={"route": "/app1", "code": "200"})
+    metric_conn.observe("latency", 4.0, labels={"route": "/app2", "code": "200"})
+    metric_conn.observe("latency", 6.0, labels={"route": "/app3", "code": "200"})
+
+    # Test that single time series can be extracted
+    matched_result = (
+        metric_conn.query("latency", labels={"route": "/app1"}).to_array().squeeze()
+    )
+    assert matched_result == 2.0
+
+    # Test that multiple time series can be extracted
+    matched_result = metric_conn.query("latency", labels={"code": "200"}).to_array()
+    numbers = set()
+    assert isinstance(matched_result, list)
+    for series in matched_result:
+        assert "route" in series["labels"]
+        assert "code" in series["labels"]
+        numbers.add(float(series["result"].squeeze()))
+    assert numbers == {2.0, 4.0, 6.0}
+
+    # Test that failed matches raises error
+    with pytest.raises(MetricNotFound):
+        metric_conn.query("latency", labels={"not exist": "fail?"})
+
+    # Test default query batch returns all time series
+    assert len(metric_conn.query("latency")) == 3
+
+    # Test null label
+    metric_conn.observe("latency", 10.0)
+    # It will be observed and included
+    assert len(metric_conn.query("latency")) == 4
+    # It can be explicitly queried with None
+    assert metric_conn.query("latency", labels=None).to_array().squeeze() == 10.0
+    # It will be ignored in label matching
+    assert len(metric_conn.query("latency", labels={"code": "200"})) == 3
+
+
+def test_empty_db_query(metric_conn: MetricConnection):
+    with pytest.raises(MetricNotFound):
+        metric_conn.query("not_found")
 
 
 def test_bench_ingestion(metric_conn: MetricConnection, benchmark):

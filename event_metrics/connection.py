@@ -6,6 +6,7 @@ import tempfile
 import time
 import warnings
 from collections import namedtuple
+from pprint import pformat
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -180,9 +181,12 @@ INSERT INTO metrics VALUES (
             "SELECT labels_json FROM cache WHERE metric_name = ?", (name,)
         )
         all_labels = set(itertools.chain.from_iterable(cursor.fetchall()))
+
+        # Post processing all_labels
         if len(all_labels) == 0:
             raise MetricNotFound("Metric {} is not recorded in database.".format(name))
 
+        # Begin time series filtering
         if isinstance(labels, str) and labels == "*":
             # If there is only one items, squeeze the batch into single query
             if len(all_labels) == 1:
@@ -202,16 +206,7 @@ INSERT INTO metrics VALUES (
                 )
         elif isinstance(labels, dict):
             if "null" in all_labels and len(all_labels) > 0:
-                warnings.warn(
-                    "Metric {} contains heterogenous labels. It has default labels and other "
-                    "key-value pairs. This creates a problem for filtering. The series associated with default "
-                    "series is ignored in query. If you are looking for it, use conn.query(..., labels=None). "
-                    "All labels associated with the metric are ".format(
-                        name, all_labels
-                    )
-                )
-
-                all_labels.pop("null")
+                all_labels.remove("null")
 
             # Perform multi-dimensional matching
             # Following comments are examples of successful match
@@ -228,20 +223,31 @@ INSERT INTO metrics VALUES (
                 # {"error_code"}
                 series_key = set(series_labels.keys())
                 # {"error_code"}
-                key_matches = series_key.intersection(query_keys) == query_keys
-                # {"error_code": "404"}
-                matched_sub_dict = {
-                    k: v for k, v in series_key.items() if k in key_matches
-                }
-                if matched_sub_dict == query_labels:
-                    matched_series_labels.append(series_labels)
+                key_matches = series_key.intersection(query_keys)
+                if key_matches == query_keys:
+                    # {"error_code": "404"}
+                    matched_sub_dict = {
+                        k: v for k, v in series_labels.items() if k in key_matches
+                    }
+                    if matched_sub_dict == query_labels:
+                        matched_series_labels.append(series_labels)
 
-            return QueryBatch(
-                [
-                    Query(self._conn, name, labels=series_labels)
-                    for series_labels in matched_series_labels
-                ]
-            )
+            if len(matched_series_labels) == 0:
+                raise MetricNotFound(
+                    "Metric {} with label {} cannot be found. The labels corresponding "
+                    "to the name are: \n{}".format(
+                        name, query_labels, pformat(all_labels)
+                    )
+                )
+            elif len(matched_series_labels) == 1:
+                return Query(self._conn, name, labels=matched_series_labels.pop())
+            else:
+                return QueryBatch(
+                    [
+                        Query(self._conn, name, labels=series_labels)
+                        for series_labels in matched_series_labels
+                    ]
+                )
 
         else:
             raise ValueError("labels input can only be '*', dict or None")

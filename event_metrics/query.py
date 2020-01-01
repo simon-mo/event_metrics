@@ -119,6 +119,9 @@ class QueryBatch:
     def __init__(self, queries: List[Query]):
         self.queries = queries
 
+    def __len__(self):
+        return len(self.queries)
+
     def _make_query_result_batch(self, make_result_lambda):
         return [
             {"labels": query.labels, "result": make_result_lambda(query)}

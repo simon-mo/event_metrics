@@ -10,6 +10,8 @@ from event_metrics import MetricConnection
 _, path = mkstemp()
 db = MetricConnection(path)
 
+db.observe("latency", 2.0, labels={"test": "1"})
+
 for i in range(0, 200, 5):
     start = time.time()
     print("sleeping ", i / 100)
