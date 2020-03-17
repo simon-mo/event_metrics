@@ -1,32 +1,36 @@
 ## Event Metrics
 
-An embedded, event-time metric collection library built for serving system
-----------------
+## An embedded, event-time metric collection library built for serving system
 
-Metric systems like prometheus aggregate metric at "processing time", whenever the scraper is 
+Metric systems like prometheus aggregate metric at "processing time", whenever the scraper is
 able to scrape the metric. `event_metrics` capture and record metrics at event time, when the
 event happens.
 
 ### Features
-Comparing to other serving system, the `event_metrics` library:
+
+Comparing to other metric system, the `event_metrics` library:
+
 - Write data to sqlite3 database to keep low-memory footprint
 - Minimal dependency (only requires numpy for numeric aggregation)
 - Aggregate with the full data by default (no reservior sampling)
 - Allow select from past duration with timedelta windowing
 - Timestamp all observation by default
+- Small API footprint: `observe` and `query` is all you need to know
 - Compute raw timeseries with different aggregation strategies:
-    - Scalers: last, min, max, mean, count, sum
-    - Buckets for histogram
-    - Percentiles for summary
-    - Array and imestamps for native python wranging
-- Metrics can be labeled with arbitrary key value pair and querying supports 
+  - Scalers: last, min, max, mean, count, sum
+  - Buckets for histogram
+  - Percentiles for summary
+  - Array and imestamps for native python wranging
+- Metrics can be labeled with arbitrary key value pair and querying supports
   multidimensional label matching.
 
 The following features are work in progress
+
 - [ ] Prometheus exporter
 - [ ] Altair based plotting dashboard
 
 ### Install
+
 - Install from source: `pip install -e .`
 - PyPI package is work in progress
 
@@ -49,7 +53,7 @@ conn.observe("latency", 2.0, labels={"service": "myapp", "other": "label"})
      .from_beginning()
      .from_timestamp(...)
      .from_timedelta(...)
-      
+
       # perform aggregation using one of the following
      .to_scaler(agg="last/min/max/mean/count/sum") # counter, guage
      .to_buckets(buckets=[1, 5, 10], cumulative=False) # histogram
@@ -61,10 +65,12 @@ conn.observe("latency", 2.0, labels={"service": "myapp", "other": "label"})
 ```
 
 ### Speed
-The library is *fast enough*. It can ingest about 34,000 data point
+
+The library is _fast enough_. It can ingest about 34,000 data point
 per seconds:
 
 You can run `pytest tests -k bench` to generate benchmark on local hardware:
+
 ```
 -------------------------------------------------- benchmark: 1 tests --------------------------------------------------
 Name (time in us)            Min       Max     Mean  StdDev   Median     IQR  Outliers  OPS (Kops/s)  Rounds  Iterations

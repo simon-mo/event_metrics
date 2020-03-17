@@ -20,7 +20,7 @@ class MetricConnection:
     """Create or connect to an event_metrics database.
 
     Args:
-        db_path(str, None): The path to database file. If not provided, 
+        db_path(str, None): The path to database file. If not provided,
           a temporary file will be created.
     """
 
@@ -38,7 +38,7 @@ class MetricConnection:
 
         # Turn off synchrounous write to the OS. This makes write faster.
         # The risk of intermediate data loss is not too bad because application
-        # level crash doesn't impact the right. It will only happen in power down event.
+        # level crash doesn't impact the integrity. It will only happen in power down event.
         self._conn.execute("pragma synchronous=0")
 
         # Create the two tables.
@@ -56,13 +56,30 @@ CREATE TABLE IF NOT EXISTS metrics (
 
 -- Table for accessing latest value
 CREATE TABLE IF NOT EXISTS cache (
-    metric_name TEXT NOT NULL, 
+    metric_name TEXT NOT NULL,
     metric_value REAL,
     labels_json TEXT NOT NULL,
     PRIMARY KEY (metric_name, labels_json)
 );
         """
         )
+
+        self.in_batch_context = False
+        self.in_batch_context_entry_count = 0
+
+    def __enter__(self):
+        """Enter batch commit context"""
+        self.in_batch_context_entry_count += 1
+        if not self.in_batch_context:
+            self.in_batch_context = True
+            self._conn.execute("BEGIN TRANSACTION")
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.in_batch_context_entry_count -= 1
+        if self.in_batch_context:  # The flag is on
+            if self.in_batch_context_entry_count == 0:  # we are top level
+                self._conn.commit()
+                self.in_batch_context = False
 
     def observe(
         self,
@@ -73,12 +90,12 @@ CREATE TABLE IF NOT EXISTS cache (
         ingest_time_us: Union[int, None] = None,
     ):
         """Record a single metric entry.
-        
+
         Args:
-            name(str): Name of the metric, the (name, label) pair should uniquely 
+            name(str): Name of the metric, the (name, label) pair should uniquely
                 identify the metric time series.
-            value(float, None): The value of the metric. 
-            labels(Dict[str,str], None): Key value pair label for the metric, the (name, label) 
+            value(float, None): The value of the metric.
+            labels(Dict[str,str], None): Key value pair label for the metric, the (name, label)
                 pair should uniquely identify the metric time series.
             ingest_time_us(int, None): Used for testing, if not None, this field overrides the
                 default ingestion time, which is the time observe() method is called.
@@ -91,14 +108,15 @@ CREATE TABLE IF NOT EXISTS cache (
             name=name, value=value, timestamp=ingest_time_us, labels_json=labels
         )
 
-        self._conn.execute("BEGIN TRANSACTION")
-        self._conn.execute(
-            "INSERT INTO metrics VALUES (:name, :value, :timestamp, :labels_json)", data
-        )
-        self._conn.execute(
-            "INSERT OR REPLACE INTO cache VALUES (:name, :value, :labels_json)", data
-        )
-        self._conn.commit()
+        with self:
+            self._conn.execute(
+                "INSERT INTO metrics VALUES (:name, :value, :timestamp, :labels_json)",
+                data,
+            )
+            self._conn.execute(
+                "INSERT OR REPLACE INTO cache VALUES (:name, :value, :labels_json)",
+                data,
+            )
 
     def increment(
         self,
@@ -111,7 +129,7 @@ CREATE TABLE IF NOT EXISTS cache (
         """Update value for the time series.
 
         This method retrieves the latest inserted value for the time series and
-        make add a delta value. 
+        make add a delta value.
 
         Example:
             >>> conn.increment("Counter") # defaults to add 1
@@ -137,29 +155,28 @@ CREATE TABLE IF NOT EXISTS cache (
             default_counter=0,
         )
 
-        self._conn.execute("BEGIN TRANSACTION")
-        # If the value doesn't exist, populate the cache
-        self._conn.execute(
-            "INSERT OR IGNORE INTO cache VALUES (:name, :default_counter, :labels_json)",
-            data,
-        )
-        self._conn.execute(
-            "UPDATE cache SET metric_value = metric_value + :delta "
-            "WHERE metric_name = :name and labels_json = :labels_json",
-            data,
-        )
-        # Now the cache is populated, we insert the new value into time series table
-        self._conn.execute(
-            """
-INSERT INTO metrics VALUES (
-:name, 
-(SELECT metric_value FROM cache WHERE metric_name = :name),
-:timestamp,
-:labels_json);
-    """,
-            data,
-        )
-        self._conn.commit()
+        with self:
+            # If the value doesn't exist, populate the cache
+            self._conn.execute(
+                "INSERT OR IGNORE INTO cache VALUES (:name, :default_counter, :labels_json)",
+                data,
+            )
+            self._conn.execute(
+                "UPDATE cache SET metric_value = metric_value + :delta "
+                "WHERE metric_name = :name and labels_json = :labels_json",
+                data,
+            )
+            # Now the cache is populated, we insert the new value into time series table
+            self._conn.execute(
+                """
+    INSERT INTO metrics VALUES (
+    :name,
+    (SELECT metric_value FROM cache WHERE metric_name = :name),
+    :timestamp,
+    :labels_json);
+        """,
+                data,
+            )
 
     def query(self, name, *, labels: Union[str, Dict[str, str], None] = "*"):
         """Start a query. To continue, calls from_* and to_* method to compute the final value.
@@ -169,7 +186,7 @@ INSERT INTO metrics VALUES (
             >>> conn.query("latency")
                     .from_timedelta(timedelta(seconds=30))
                     .to_percentiles([50, 90])
-        
+
         Args:
             name(str): Series name.
             labels("*", dict, None): query label.

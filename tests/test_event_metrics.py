@@ -150,3 +150,13 @@ def test_empty_db_query(metric_conn: MetricConnection):
 
 def test_bench_ingestion(metric_conn: MetricConnection, benchmark):
     benchmark(lambda: metric_conn.observe("lat", 1.0))
+
+
+@pytest.mark.parametrize("batch_size", (1, 10, 100, 500))
+def test_bench_batch_ingest(metric_conn: MetricConnection, benchmark, batch_size):
+    def batch_op():
+        with metric_conn:
+            for _ in range(batch_size):
+                metric_conn.observe("lat", 1.0)
+
+    benchmark(batch_op)
