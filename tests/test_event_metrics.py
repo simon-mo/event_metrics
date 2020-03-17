@@ -148,6 +148,21 @@ def test_empty_db_query(metric_conn: MetricConnection):
         metric_conn.query("not_found")
 
 
+def test_batch_op(metric_conn: MetricConnection):
+    with metric_conn:
+        metric_conn.observe("lat", 1.0)
+        metric_conn.observe("lat", 2.0)
+    arr = metric_conn.query("lat").from_beginning().to_array()
+    assert len(arr) == 2
+
+    metric_conn.begin_transaction()
+    metric_conn.observe("lon", 1.0)
+    metric_conn.observe("lon", 2.0)
+    metric_conn.commit()
+    arr = metric_conn.query("lon").from_beginning().to_array()
+    assert len(arr) == 2
+
+
 def test_bench_ingestion(metric_conn: MetricConnection, benchmark):
     benchmark(lambda: metric_conn.observe("lat", 1.0))
 

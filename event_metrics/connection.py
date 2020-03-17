@@ -81,6 +81,12 @@ CREATE TABLE IF NOT EXISTS cache (
                 self._conn.commit()
                 self.in_batch_context = False
 
+    def begin_transaction(self):
+        self.__enter__()
+
+    def commit(self):
+        self.__exit__(None, None, None)
+
     def observe(
         self,
         name: str,
