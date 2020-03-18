@@ -22,15 +22,23 @@ class MetricConnection:
     Args:
         db_path(str, None): The path to database file. If not provided,
           a temporary file will be created.
+        flush_db(boolean, optional): Whether or not to flush the database
+          before write. The default is True.
     """
 
-    def __init__(self, db_path: Union[str, None] = None):
+    def __init__(self, db_path: Union[str, None] = None, *, flush_db=True):
         if db_path is None:
             _, db_path = tempfile.mkstemp(suffix=".event_metrics.db")
 
         self._conn = sqlite3.connect(
             db_path, isolation_level=None  # Turn on autocommit mode
         )
+
+        if flush_db:
+            self._conn.execute("BEGIN TRANSACTION;")
+            self._conn.execute("DROP TABLE IF EXISTS metrics;")
+            self._conn.execute("DROP TABLE IF EXISTS cache;")
+            self._conn.commit()
 
         # Turn on write-ahead-logging. In this mode, sqlite3 allows multi-reader
         # single-writer concurrency.
