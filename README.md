@@ -20,14 +20,9 @@ Comparing to other metric system, the `event_metrics` library:
   - Scalers: last, min, max, mean, count, sum
   - Buckets for histogram
   - Percentiles for summary
-  - Array and imestamps for native python wranging
+  - Array and timestamps for native python wrangling
 - Metrics can be labeled with arbitrary key value pair and querying supports
   multidimensional label matching.
-
-The following features are work in progress
-
-- [ ] Prometheus exporter
-- [ ] Altair based plotting dashboard
 
 ### Install
 

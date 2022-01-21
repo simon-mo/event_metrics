@@ -1,5 +1,4 @@
 import datetime
-import itertools
 import json
 from typing import Dict, List, Tuple, Union
 
@@ -24,14 +23,17 @@ class Query:
 
     def _fetch_array(self, projection_clause):
         data = dict(
-            name=self._metric_name, cutoff=self._time_cutoff_us, labels=self.labels,
+            name=self._metric_name,
+            cutoff=self._time_cutoff_us,
+            labels=self.labels,
         )
         result_cursor = self._conn.execute(
             """
-SELECT {} FROM metrics 
-WHERE metric_name = :name 
-AND ingest_time_us > :cutoff 
-AND labels_json = :labels 
+SELECT {} FROM metrics
+WHERE metric_name = :name
+AND ingest_time_us > :cutoff
+AND labels_json = :labels
+ORDER BY ingest_time_us
         """.format(
                 projection_clause
             ),

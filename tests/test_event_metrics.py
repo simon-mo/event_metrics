@@ -1,3 +1,4 @@
+import random
 import time
 from datetime import datetime, timedelta
 
@@ -21,7 +22,7 @@ def test_observe_null(metric_conn: MetricConnection):
     assert len(metric_conn.query("obs").to_timestamps()) == 2
     ts = metric_conn.query("obs").to_timestamps().tolist()
     assert isinstance(ts[0], datetime)
-    assert set(ts) == set([datetime.fromtimestamp(1), datetime.fromtimestamp(2)])
+    assert ts == [datetime.fromtimestamp(1), datetime.fromtimestamp(2)]
 
 
 def test_return_scalers(metric_conn: MetricConnection):
@@ -58,21 +59,26 @@ def test_return_array(metric_conn: MetricConnection):
     metric_conn.observe("lat", 1.0)
     metric_conn.observe("lat", 2.0)
     result = metric_conn.query("lat").to_array()
-    print(result)
-    # For SQL system, the ordering is not guaranteed
-    assert set(result.tolist()) == set([1.0, 2.0])
+    assert result.tolist() == [1.0, 2.0]
+
+
+def test_return_array_random_large(metric_conn: MetricConnection):
+    arr = [random.randint(0, 1000) for _ in range(1000)]
+    [metric_conn.observe("lat", i) for i in arr]
+    result = metric_conn.query("lat").to_array()
+    assert result.tolist() == arr
 
 
 def test_return_timestamps_array(metric_conn: MetricConnection):
     metric_conn.observe("lat", 1.0, ingest_time_us=100)
     metric_conn.observe("lat", 2.0, ingest_time_us=200)
     timestamps, data = metric_conn.query("lat").to_timestamps_array()
-    # For SQL system, the ordering is not guaranteed
-    assert set(data.tolist()) == set([1.0, 2.0])
+    assert data.tolist() == [1.0, 2.0]
     # Timestamps should be returned in seconds
-    assert set(timestamps.tolist()) == set(
-        [datetime.fromtimestamp(100 / 1e6), datetime.fromtimestamp(200 / 1e6)]
-    )
+    assert timestamps.tolist() == [
+        datetime.fromtimestamp(100 / 1e6),
+        datetime.fromtimestamp(200 / 1e6),
+    ]
 
 
 def test_projection(metric_conn: MetricConnection):
@@ -167,7 +173,7 @@ def test_bench_ingestion(metric_conn: MetricConnection, benchmark):
     benchmark(lambda: metric_conn.observe("lat", 1.0))
 
 
-@pytest.mark.parametrize("batch_size", (1, 10, 100, 500))
+@pytest.mark.parametrize("batch_size", (1, 10, 100))
 def test_bench_batch_ingest(metric_conn: MetricConnection, benchmark, batch_size):
     def batch_op():
         with metric_conn:

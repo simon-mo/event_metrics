@@ -1,15 +1,10 @@
-import datetime
 import itertools
 import json
 import sqlite3
 import tempfile
-import time
-import warnings
-from collections import namedtuple
 from pprint import pformat
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Union
 
-import numpy as np
 
 from event_metrics.exceptions import MetricNotFound
 from event_metrics.query import Query, QueryBatch
@@ -117,9 +112,9 @@ CREATE TABLE IF NOT EXISTS cache (
         if ingest_time_us is None:
             ingest_time_us = _current_time_us()
 
-        labels = json.dumps(labels, sort_keys=True)
+        labels_json = json.dumps(labels, sort_keys=True)
         data = dict(
-            name=name, value=value, timestamp=ingest_time_us, labels_json=labels
+            name=name, value=value, timestamp=ingest_time_us, labels_json=labels_json
         )
 
         with self:
@@ -160,12 +155,12 @@ CREATE TABLE IF NOT EXISTS cache (
         if ingest_time_us is None:
             ingest_time_us = _current_time_us()
 
-        labels = json.dumps(labels, sort_keys=True)
+        labels_json = json.dumps(labels, sort_keys=True)
         data = dict(
             name=name,
             delta=delta,
             timestamp=ingest_time_us,
-            labels_json=labels,
+            labels_json=labels_json,
             default_counter=0,
         )
 
