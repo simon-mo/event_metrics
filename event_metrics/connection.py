@@ -5,7 +5,6 @@ import tempfile
 from pprint import pformat
 from typing import Dict, Union
 
-
 from event_metrics.exceptions import MetricNotFound
 from event_metrics.query import Query, QueryBatch
 from event_metrics.utils import _current_time_us

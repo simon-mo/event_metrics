@@ -111,3 +111,4 @@ dmypy.json
 
 .vscode
 poetry.lock
+README.rst

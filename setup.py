@@ -9,12 +9,20 @@ try:
 except ImportError:
     from distutils.core import setup
 
+import os.path
+
 readme = ""
+here = os.path.abspath(os.path.dirname(__file__))
+readme_path = os.path.join(here, "README.rst")
+if os.path.exists(readme_path):
+    with open(readme_path, "rb") as stream:
+        readme = stream.read().decode("utf8")
 
 setup(
     long_description=readme,
     name="event_metrics",
     version="0.1.0",
+    description="An embedded, event-time metric collection library",
     python_requires="==3.*,>=3.5.0",
     author="simon-mo",
     author_email="xmo@berkeley.edu",
