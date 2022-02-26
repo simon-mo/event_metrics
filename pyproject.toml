@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "event_metrics"
-version = "0.1.0"
+version = "0.2.0"
 description = "An embedded, event-time metric collection library"
 readme = "README.md"
 authors = ["simon-mo <xmo@berkeley.edu>"]
