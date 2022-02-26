@@ -3,7 +3,7 @@ import json
 import sqlite3
 import tempfile
 from pprint import pformat
-from typing import Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from event_metrics.exceptions import MetricNotFound
 from event_metrics.query import Query, QueryBatch
@@ -20,7 +20,13 @@ class MetricConnection:
           before write. The default is True.
     """
 
-    def __init__(self, db_path: Union[str, None] = None, *, flush_db=True):
+    def __init__(
+        self,
+        db_path: Union[str, None] = None,
+        *,
+        default_labels: Optional[Dict[str, Any]] = None,
+        flush_db=True,
+    ):
         if db_path is None:
             _, db_path = tempfile.mkstemp(suffix=".event_metrics.db")
 
@@ -69,6 +75,8 @@ CREATE TABLE IF NOT EXISTS cache (
         self.in_batch_context = False
         self.in_batch_context_entry_count = 0
 
+        self.default_labels = default_labels or dict()
+
     def __enter__(self):
         """Enter batch commit context"""
         self.in_batch_context_entry_count += 1
@@ -111,7 +119,9 @@ CREATE TABLE IF NOT EXISTS cache (
         if ingest_time_us is None:
             ingest_time_us = _current_time_us()
 
-        labels_json = json.dumps(labels, sort_keys=True)
+        labels_json = json.dumps(
+            {**self.default_labels, **(labels or dict())}, sort_keys=True
+        )
         data = dict(
             name=name, value=value, timestamp=ingest_time_us, labels_json=labels_json
         )
@@ -154,7 +164,9 @@ CREATE TABLE IF NOT EXISTS cache (
         if ingest_time_us is None:
             ingest_time_us = _current_time_us()
 
-        labels_json = json.dumps(labels, sort_keys=True)
+        labels_json = json.dumps(
+            {**self.default_labels, **(labels or dict())}, sort_keys=True
+        )
         data = dict(
             name=name,
             delta=delta,

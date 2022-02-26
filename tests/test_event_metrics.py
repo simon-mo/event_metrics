@@ -181,3 +181,19 @@ def test_bench_batch_ingest(metric_conn: MetricConnection, benchmark, batch_size
                 metric_conn.observe("lat", 1.0)
 
     benchmark(batch_op)
+
+
+@pytest.mark.parametrize("cardinality_before", (0, 1000, 10000, 100000))
+def test_labeling_change(metric_conn: MetricConnection, benchmark, cardinality_before):
+    val = 0
+    with metric_conn:
+        for _ in range(cardinality_before):
+            metric_conn.increment("lat", 1.0, labels={"key": val})
+        val += 1
+
+    def op():
+        nonlocal val
+        metric_conn.increment("lat", 1.0, labels={"key": val})
+        val += 1
+
+    benchmark(op)
