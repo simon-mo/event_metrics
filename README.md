@@ -27,7 +27,7 @@ Comparing to other metric system, the `event_metrics` library:
 ### Install
 
 - Install from source: `pip install -e .`
-- PyPI package is work in progress
+- `pip install event_metrics`
 
 ### Usage
 
